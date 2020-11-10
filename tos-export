@@ -1,0 +1,28 @@
+#!/bin/sh
+
+# todo
+waitguestumount() {
+  echo "waiting for umount..."
+  while grep "$HOME/vmtos" < /etc/mtab; do
+    sleep 0.2
+  done
+  echo "waiting for qcow lock..."
+  while fuser "$diskimg" >/dev/null 2>&1; do
+    sleep 0.2
+  done
+}
+
+waitguestmount() {
+  echo "waiting for mount..."
+  while ! grep "$HOME/vmtos" < /etc/mtab; do
+    sleep 0.2
+  done
+}
+
+mkdir ~/vmtos
+grep "$HOME/vmtos" < /etc/mtab && guestunmount ~/vmtos &&
+waitguestumount
+guestmount -a  "$diskimg" -m /dev/sda2 ~/vmtos/ && waitguestmount
+rflags="--cvs-exclude --exclude README.md --exclude .gitattributes"
+rsync -rv --delete ~/vmtos/Git ~/TempleOSGit $rflags
+guestunmount ~/vmtos/ && waitguestumount

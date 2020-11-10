@@ -1,0 +1,32 @@
+#!/bin/sh
+
+# usage:
+# tos-commit TempleOS.ISO
+# tos-commit TempleOS.ISO Sup1 Supplementals1.ISO
+
+noext() {
+  sed 's/\.ISO$//g;s/\.ZIP$//g;s/\.IMG$//g'
+}
+
+isoname="$(basename "$1")"
+supname="$(basename "$3")"
+isoext="$(echo "$isoname" | cut -d. -f2-)"
+[ "$3" ] &&
+  ext="$(echo "$supname" | cut -d. -f2-)" && cp "$3" "$HOME/.tosfiles/${2}.${ext}" || exit
+n="$(echo "$1" | noext)"
+n="${n}${2}"
+[ "$2" ] && cp "$1" "${n}.${isoext}" && [ ! "$NF" ] && rm -rf "$n/"
+while [ ! -d "$n" ]; do
+  tos-qemu "${n}.${isoext}"
+done
+d="$(echo "${3:-$1}" | noext | rev | cut -d_ -f1-5 | rev)"
+[ "$2" ] && subdir="Home/$2/"
+dst="$HOME/tos/$subdir"
+mkdir -p $dst
+rsync -Crv --exclude README\.md --exclude \.gitattributes --delete "$n/" "$dst"
+git -C ~/tos add -A
+git -C ~/tos commit \
+  --author 'Terry A. Davis <tdavis@templeos.com>' \
+  --date "$d" \
+  -m "$(basename "${3:-$1}") sha1 $(sha1sum "${3:-$1}" | cut -d' ' -f1)" &&
+git -C ~/tos log -1 -p --full-diff --find-copies-harder -M20% -l0

@@ -1,0 +1,85 @@
+#!/bin/sh
+
+# I use this to run all my fs operations (mounting and copying to the vms)
+# over ssh on my home server (faster than doing it on a nfs mount)
+TOS_FSWRP="${TOS_FSWRP:-sh -c}"
+
+isofile="$(realpath "$1")"
+cmd="$2"
+if [ ! -f "$isofile" ]; then
+  echo "usage: $0 file.iso"
+  exit 1
+fi
+
+sha1sum "$isofile"
+
+renamedisofile=$(echo "$isofile" | sed 's/:/_/g')
+if [ "$renamedisofile" != "$isofile" ]; then
+  $TOS_FSWRP "mv -vi \"$isofile\" \"$renamedisofile\"" || exit
+  isofile="$renamedisofile"
+fi
+diskimg="${isofile}.qcow2"
+folder=$(echo "$isofile" | rev | cut -d'.' -f2- | rev)
+
+run_qemu() {
+  qemu-system-x86_64 \
+    -hda "$diskimg" \
+    -machine kernel_irqchip=off \
+    -smp cores=4 \
+    -enable-kvm \
+    -cpu host \
+    -m 2048 \
+    -rtc base=localtime \
+    -soundhw pcspk \
+    -cdrom "$isofile" \
+    "$@"
+  return $?
+}
+
+umountvm() {
+  $TOS_FSWRP 'sudo umount /mnt/tos && sleep 1 && sudo qemu-nbd -d /dev/nbd3'
+}
+
+mountvm() {
+  echo "$@"
+  umountvm
+  $TOS_FSWRP 'sudo mkdir /mnt/tos'
+  $TOS_FSWRP 'sudo modprobe nbd max_part=63'
+  $TOS_FSWRP "sudo qemu-nbd -c /dev/nbd3 \"$diskimg\""
+  $TOS_FSWRP "sudo mount /dev/nbd3p2 /mnt/tos"
+  sleep 1
+}
+
+case "$cmd" in
+  mount)
+    mountvm
+    case "$TOS_FSWRP" in
+      ssh*) $TOS_FSWRP ;;
+    esac
+    exit
+    ;;
+  umount) umountvm; exit ;;
+esac
+
+if [ ! -f "$diskimg" ]; then
+  echo "vm doesn't exist, creating..."
+  qemu-img create -f qcow2 "$diskimg" 500M || exit
+  run_qemu -boot d || exit
+else
+  echo "running existing disk image"
+  if [ -d ~/.tosfiles ]; then
+    mountvm "copying files from ~/.tosfiles to second partition"
+    $TOS_FSWRP 'sudo cp -Rv ~/.tosfiles/* /mnt/tos'
+    umountvm
+  fi
+  run_qemu -boot order=cd,menu=on || exit
+  mountvm "syncing D:/Git to $folder"
+  if $TOS_FSWRP '[ -d /mnt/tos/Git/ ]'; then
+    $TOS_FSWRP "rsync -rv --delete /mnt/tos/Git/ \"$folder\""
+    $TOS_FSWRP "cp /mnt/tos/Export* ~/.tosfiles/"
+  else
+    $TOS_FSWRP ls /mnt/tos
+    echo "no Git directory found"
+  fi
+  umountvm
+fi

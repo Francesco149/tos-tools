@@ -1,6 +1,6 @@
 # NOTE
 most of these tools are incomplete, undocumented, old, unmaintained.
-the only two scripts I have been using and updating are tos-mirror and tos-commit
+the only two scripts I have been using and updating are tos-qemu and tos-commit
 
 # intro
 various tools I glued together for my TempleOS workflow
